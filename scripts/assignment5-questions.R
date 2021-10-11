@@ -37,6 +37,9 @@ combined %>% filter(!is.na(covid_19_deaths)) %>%
   distinct(state,race_and_hispanic_origin_group,pop2019) %>%
   group_by(state) %>%
   summarise(population = sum(pop2019))
+## populations match rough estimates for each state
+
+## ANALYSIS
 
 ## These four queries show the which races have the highest death rates for covid-19, influenza, pneumonia and overall. 
 ## I am starting here to start broadly analyzing and look for ideas to narrow down on. 
