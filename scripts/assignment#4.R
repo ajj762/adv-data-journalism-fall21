@@ -22,17 +22,39 @@ deaths <- deaths %>% mutate(new_deaths = as.numeric(deaths))
 deaths <- deaths %>% mutate(new_pop = as.numeric(population))
 write_csv(deaths, "data/clean1-drug&alcohol-deaths-2010-2019-state-age-year.csv", na="")
 
+test <- deaths %>% count(deaths)
+
 # Add new rate column
 deaths <- deaths %>% filter(!is.na(new_deaths)) %>%
   mutate(rate = new_deaths/new_pop*100000) 
 
 ## INTEGRITY CHECKS
 
+## to see how many na's there are
+deaths %>% filter(is.na(new_deaths)) %>% summarise(n = n())
+
 # How many different causes of death are in this data?
 death_types <- deaths %>% select(mcd_drug_alcohol_induced_cause) %>%
   group_by(mcd_drug_alcohol_induced_cause) %>%
   summarise(death_type = n())
 # There are 8 causes of death listed including all other non-drug and non-alcohol related deaths.
+
+## Easier way to do this count
+deaths %>% count(mcd_drug_alcohol_induced_cause)
+
+# how many total drug and alcohol related deaths in the five years?
+deaths %>% filter(!is.na(new_deaths) & mcd_drug_alcohol_induced_cause != "All other non-drug and non-alcohol causes") %>%
+  summarise(total_deaths = sum(new_deaths))
+## 2,495,957
+
+deaths %>% filter(!is.na(new_deaths) & mcd_drug_alcohol_induced_cause == "All other non-drug and non-alcohol causes") %>%
+  summarise(total_deaths = sum(new_deaths))
+## All other non-drug or alcohol deaths equals 13,913,640
+## we don't want these
+
+# how many drug/alcohol deaths per year?
+
+
 
 # How many years does it cover?
 deaths %>% count(year)
