@@ -1,0 +1,201 @@
+---
+title: "Chicago Full-Time Employees"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r loading, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(RSocrata)
+```
+
+The data for this assignment is a database of the salaries and job titles for all full-time employees of the City of Chicago. You can read more about it here: [https://data.cityofchicago.org/Administration-Finance/Current-Employee-Names-Salaries-and-Position-Title/n4bx-5kf6](https://data.cityofchicago.org/Administration-Finance/Current-Employee-Names-Salaries-and-Position-Title/n4bx-5kf6)
+
+Here's how to get the data:
+  * Click API
+  * Change the API Endpoint from JSON to CSV
+  * Copy
+
+```{r}
+employees <- read.socrata("https://data.cityofchicago.org/resource/n4bx-5kf6.csv")
+
+# the full_or_part_time column says "FALSE", but it should say "F" (for full time--because these are all full-time employees)
+```
+
+Get to know the data a little bit:
+
+How many employees are salaried and how many are paid hourly? 
+```{r}
+employees %>% group_by(salary_or_hourly) %>%
+  summarise(count = n())
+```
+There are 24,432 salaried employees and 5,631 employees paid hourly.
+
+
+Who's the highest paid employee in each category (salary and hourly)?
+```{r}
+employees %>% filter(salary_or_hourly == "Salary") %>%
+  select(name, annual_salary) %>%
+  arrange(desc(annual_salary))
+```
+Jamie L Rhee is the highest paid salaried employee, making $275,004.
+
+```{r}
+employees %>% filter(salary_or_hourly == "Hourly") %>%
+  select(name, hourly_rate) %>%
+  arrange(desc(hourly_rate))
+```
+John W Jones and Anita Rao make the most money hourly, each making $128 an hour. 
+
+Calculate total salary 
+```{r}
+employees %>% filter(salary_or_hourly == "Salary") %>%
+  summarise(sum = sum(annual_salary))
+```
+The total salary is $2,275,518,137.
+
+Calculate average salary
+```{r}
+employees %>% filter(salary_or_hourly == "Salary") %>%
+  summarise(avg = mean(annual_salary))
+```
+The average salary is $93,136.79. 
+
+Calculate the number of salaried employees for each department, and sort by total salary:
+```{r}
+employees %>% group_by(department) %>%
+  summarise(count = n(), sum = sum(annual_salary)) %>%
+  arrange(desc(sum))
+```
+A little extra credit:
+It's easy to calculate how much each department spends on annual salaries, but how much do they spend on hourly employees? We can only approximate this, since we don't know for sure what a given hourly employee will end up working. But we have some clues: the *frequency_description* column tells us how many hours a week that employee should work. Let's assume the city is generous and pays hourly employees vacation time (which is a stretch). Calculate estimated wages for the year assuming the employees get paid for a full 52 weeks:
+```{r}
+employees %>% filter(salary_or_hourly == "Hourly") %>%
+  group_by(department) %>%
+  summarise(yearly_wage = sum(frequency_description)*sum(hourly_rate)*52)
+```
+
+There's also a table in the Open Data Portal of Employee Overtime and Supplemental Earnings for 2021 (and past years): 
+[https://data.cityofchicago.org/Administration-Finance/Employee-Overtime-and-Supplemental-Earnings-2021/9agd-xhje](https://data.cityofchicago.org/Administration-Finance/Employee-Overtime-and-Supplemental-Earnings-2021/9agd-xhje)
+
+Get the url for this data table and import it as well:
+```{r}
+supplement <- read.socrata("https://data.cityofchicago.org/resource/9agd-xhje.csv")
+```
+
+Calculate the total overtime / supplemental payments per department: 
+```{r}
+supplement %>% group_by(department_name) %>%
+  summarise(sum = sum(total))
+```
+I want to know how this number compares to the total salaries of these departments. To do that, we need to join. 
+Unfortunately the department names in *department* in the employee table don't exactly match the names in *department_name* of the supplement table. I would expect nothing less. We'll have to create a column in the employees table that matches the names in the supplement table.
+
+I went ahead and created the script to do that; I compared the values in both tables and matched them up.
+(I did this to save time, but YOU will likely have to do this kind of cleanup in your data work at some point)
+```{r}
+employees <- employees %>% mutate(department_name = case_when(
+  department=="ANIMAL CONTRL" ~ "CHICAGO ANIMAL CARE AND CONTROL",
+  department=="TRANSPORTN" ~ "CHICAGO DEPARTMENT OF TRANSPORTATION",
+  department=="FIRE" ~ "CHICAGO FIRE DEPARTMENT",
+  department=="POLICE" ~ "CHICAGO POLICE DEPARTMENT",
+  department=="PUBLIC LIBRARY" ~ "CHICAGO PUBLIC LIBRARY",
+  department=="CITY CLERK" ~ "CITY CLERK",
+  department=="COPA" ~ "CIVILIAN OFFICE OF POLICE ACCOUNTABILITY",
+  department=="ADMIN HEARNG" ~ "DEPARTMENT OF ADMINISTRATIVE HEARINGS",
+  department=="DAIS" ~ "DEPARTMENT OF ASSETS, INFORMATION, AND SERVICES",
+  department=="HUMAN RESOURCES" ~ "DEPARTMENT OF ASSETS, INFORMATION, AND SERVICES",
+  department=="AVIATION" ~ "DEPARTMENT OF AVIATION",
+  department=="BUILDINGS" ~ "DEPARTMENT OF BUILDINGS",
+  department=="BUSINESS AFFAIRS" ~ "DEPARTMENT OF BUSINESS AFFAIRS AND CONSUMER PROTECTION",
+  department=="FAMILY & SUPPORT" ~ "DEPARTMENT OF FAMILY AND SUPPORT SERVICES",
+  department=="FINANCE" ~ "DEPARTMENT OF FINANCE",
+  department=="HEALTH" ~ "DEPARTMENT OF PUBLIC HEALTH",
+  department=="STREETS & SAN" ~ "DEPARTMENT OF STREETS AND SANITATION",
+  department=="WATER MGMNT" ~ "DEPARTMENT OF WATER MANAGEMENT",
+  department=="DISABILITIES" ~ "MAYOR'S OFFICE FOR PEOPLE WITH DISABILITIES",
+  department=="OEMC" ~ "OFFICE OF EMERGENCY MANAGEMENT AND COMMUNICATIONS",
+  department=="INSPECTOR GEN" ~ "OFFICE OF INSPECTOR GENERAL",
+  department=="PUBLIC SAFETY ADMIN" ~ "OFFICE OF PUBLIC SAFETY ADMINISTRATION",
+))
+```
+
+Now, show total overtime payment as a percentage of total salary payment by department.
+1: calculate totals by the new *department_name* variable in employee
+2: calculate totals by the *department_name* variable in supplement
+3: join them together using a left_join (not every department in employees is in the supplement table)
+4: create the column that shows supplemental payment as a total of salary. You can use the round() function to make it easier to read
+e.g. round(.5602394, 2) = .56
+```{r}
+total_salary <- employees %>% filter(!is.na(annual_salary)) %>%
+  group_by(department_name) %>%
+  summarise(salary_total = sum(annual_salary))
+
+total_supp <- supplement %>% filter(!is.na(total)) %>%
+  group_by(department_name) %>%
+  summarise(supp_total = sum(total))
+
+supp_salary <- total_salary %>% left_join(total_supp, by = "department_name")
+
+supp_salary <- supp_salary %>% select(department_name, salary_total, supp_total) %>% 
+  mutate(pct_total = (supp_total/salary_total)*100)
+
+```
+
+Using the supplement table, now calculate which person got the most in total overtime or supplemental pay:
+```{r}
+supplement %>% group_by(name) %>%
+  summarise(total_salary = sum(total)) %>%
+  arrange(desc(total_salary))
+```
+
+There are some big payouts here. If you haven't already, add title and department_name to your group_by to get a sense of who they are.
+And notice that for some, the name is missing, possibly redacted. We'll have to ignore those for now.
+```{r}
+supplement %>% group_by(name, title, department_name) %>%
+  summarise(total_salary = sum(total)) %>%
+  arrange(desc(total_salary))
+```
+
+It'd be great to see what their salaries are, i.e. what they're getting paid on top of overtime. 
+Unfortunately Chicago doesn't provide a unique id for its employees, so we'll have to do a join by *name*.
+This is always a bit risky. If you look at the names in the employees table, you'll find that some of them appear more than once. 
+```{r}
+employees %>% count(name) %>%
+  arrange(desc(n))
+```
+
+We can join on both *name* and *department_name*:
+Join the two tables together using a left_join, and create a new table of the combined records:
+```{r}
+combined <- employees %>% left_join(supplement, by = c("department_name", "name"))
+```
+
+Notice that our new table has more records than the employees table. That means that some employees were duplicated even within name and department_name:
+```{r}
+combined %>% count(name) %>%
+  arrange(desc(n))
+```
+We don't know for sure if these are duplicate people or duplicate records. For example, there could be nine different Gabriel Garcias in the Police Dept. Or Gabriel Garcia's record may be duplicated 9 times.
+
+If you look more closely, you'll see there are three Gabriel Garcias in each table, and they all work in the police department. Three in one table joined with three in the other equals nine records total. We definitely have a duplication problem and no way to fix it. 
+
+But we can use the supplement table more cautiously. 
+For example, look up the three people getting the most overtime pay in the employee table: what are their salaries? 
+(They're in there.)
+```{r}
+combined %>% group_by(name, annual_salary, department_name) %>%
+  summarise(ot = sum(total)) %>%
+  arrange(desc(ot))
+```
+
+Carmelita P Wiley Earls makes $170,352 a year and has made $146,967.63 in overtime pay, the highest out of all employees.
+Patrick M McCarthy's annual salary is listed as NA, but they made $123,668.38 in overtime pay, the second highest overtime payment.
+Thomas Carbonneau makes $170,352 a year and has made $112,445.55 in overtime pay, the third highest. 
+Carmelita and Thomas work in the fire department. Patrick works in the department of streets and sanitation.
+
+
+This is a good introduction to dealing with dirty data.
+
